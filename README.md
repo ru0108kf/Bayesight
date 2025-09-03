@@ -7,10 +7,9 @@ To get started, simply install the required dependencies using pip.
 ```bash
 python -m venv Bayesight
 
-# 仮想環境を有効化
-# Windowsの場合
+# Windows
 Bayesight\Scripts\activate
-# macOS/Linuxの場合
+# macOS/Linux
 source Bayesight/bin/activate
 
 pip install requirements.txt
