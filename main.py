@@ -10,7 +10,6 @@ matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import itertools
 import japanize_matplotlib
-import filepath
 
 
 # =================数値設定=================
@@ -30,6 +29,7 @@ TENSOR_CON_DATA_PATH = os.path.join(SAVE_FOLDER_PATH, 'tensor_con_data.pt')
 MODEL_PATH = os.path.join(SAVE_FOLDER_PATH, 'model.pth')
 MODEL_OBJECT_PATH = os.path.join(SAVE_FOLDER_PATH, 'model_object.pth')
 IMG_PATH = os.path.join(SAVE_FOLDER_PATH, 'img')
+PREDICTION_LOG_PATH = os.path.join(SAVE_FOLDER_PATH, 'prediction_log.json')
 
 
 
@@ -234,13 +234,35 @@ def single_model_loop(Y: float, run_execution: bool, Create: bool):
         # Assuming the first output of the model is the objective for prediction
         mean = posterior.mean[..., 0].cpu().numpy().flatten()
         stddev = torch.sqrt(posterior.variance[..., 0]).cpu().numpy().flatten()
+    
+    # meanとstddevをJSONファイルに追記保存
+    # 既存のログファイルを読み込む
+    if os.path.exists(PREDICTION_LOG_PATH):
+        with open(PREDICTION_LOG_PATH, 'r', encoding='utf-8') as f:
+            log_data = json.load(f)
+    else:
+        log_data = []
+    
+    # 今回のバッチで得られた各点の情報を追記
+    start_point_number = len(train_y_np)
+    for i in range(len(mean)):
+        new_entry = {
+            "point_number": start_point_number + i,
+            "mean": float(mean[i]),  # numpy.float32をpythonのfloatに変換
+            "stddev": float(stddev[i]) # numpy.float32をpythonのfloatに変換
+        }
+        log_data.append(new_entry)
+
+    # ファイルに書き戻す
+    with open(PREDICTION_LOG_PATH, 'w', encoding='utf-8') as f:
+        json.dump(log_data, f, indent=4, ensure_ascii=False)
 
     dims_to_vary_list = list(itertools.combinations(range(6), 2))
 
     for i in range(len(new_x_np)):
         fig, axes = plt.subplots(5, 3, figsize=(18, 25))
         highlight_point_number = len(train_y_np) + i
-        fig.suptitle(f'6次元データの散布図（全15パターン) #{highlight_point_number} 獲得関数:{acq_value:.2f}', fontsize=22)
+        fig.suptitle(f'6次元データの散布図（全15パターン) #{highlight_point_number} :{acq_value:.2f}', fontsize=22)
 
         for j, dims_to_vary in enumerate(dims_to_vary_list):
             ax = axes[j // 3, j % 3]
@@ -269,11 +291,9 @@ def single_model_loop(Y: float, run_execution: bool, Create: bool):
             lower_bound = (mean[i] - stddev[i])*100
             upper_bound = (mean[i] + stddev[i])*100
             # 標準偏差の値に基づいてカテゴリ名を決定
-            if 0.10 < stddev[i] <= 0.15:
+            if 0.07 < stddev[i]:
                 category_name = '探索案'
-            elif 0.05 < stddev[i] <= 0.10:
-                category_name = '中間案'
-            elif 0 <= stddev[i] <= 0.05:
+            elif stddev[i] <= 0.075:
                 category_name = '活用案'
             # テキストを範囲表示に変更
             ax.text(
