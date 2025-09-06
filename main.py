@@ -22,7 +22,7 @@ RAW_SAMPLES = 512
 bounds = torch.tensor([[0.0] * 6, [1.0] * 6], device=device, dtype=dtype)
 
 # ファイルパス
-SAVE_FOLDER_PATH = r'C:\Users\msy-t\ScriptFile\kansei\multiObjective\save_folder'
+SAVE_FOLDER_PATH = r'C:\Users\archi\Desktop\Bayesight-main\save_folder'
 TENSOR_X_DATA_PATH = os.path.join(SAVE_FOLDER_PATH, 'tensor_X_data.pt')
 JSON_Y_DATA_PATH = os.path.join(SAVE_FOLDER_PATH, 'json_Y_data.json')
 TENSOR_CON_DATA_PATH = os.path.join(SAVE_FOLDER_PATH, 'tensor_con_data.pt')
@@ -55,6 +55,16 @@ warnings.filterwarnings("ignore", category=RuntimeWarning)
 
 NOISE_SE = 0.25
 train_yvar = torch.tensor(NOISE_SE**2, device=device, dtype=dtype)
+
+# インデックス番号とラベルの対応辞書
+dim_labels = {
+    0: "回転1",
+    1: "回転2",
+    2: "高さ1",
+    3: "高さ2",
+    4: "傾き1",
+    5: "傾き2"
+}
 
 seed = 7777
 torch.manual_seed(seed)
@@ -166,45 +176,45 @@ def single_model_loop(Y: float, run_execution: bool, Create: bool):
     train_y = torch.tensor(list(Y.values()), dtype=dtype, device=device).view(-1, 1)
 
     if Create:
-        dims_to_vary_list = list(itertools.combinations(range(6), 2))
-        fig, axes = plt.subplots(5, 3, figsize=(18, 25))
-        fig.suptitle('6次元データの散布図（全15パターンの2次元断面）', fontsize=22)
-        
+        fig, axes = plt.subplots(6, 1, figsize=(10, 12))
+        fig.suptitle('6次元データの分布図', fontsize=22)
+
         train_x_np = train_x.cpu().numpy()
         train_y_np = train_y.cpu().numpy().flatten()
-
-        for i, dims_to_vary in enumerate(dims_to_vary_list):
-            ax = axes[i // 3, i % 3]
-            dim1, dim2 = dims_to_vary
-            scatter = ax.scatter(
-                train_x_np[:, dim1], 
-                train_x_np[:, dim2], 
-                c=train_y_np, 
-                cmap='viridis',
-                alpha=0.7
-            )
-            ax.set_title(f'$X_{{{dim1+1}}}, X_{{{dim2+1}}}$ 平面', fontsize=16)
-            ax.set_xlabel(f'$X_{{{dim1+1}}}$', fontsize=12)
-            ax.set_ylabel(f'$X_{{{dim2+1}}}$', fontsize=12)
-            ax.set_aspect('equal')
-            fig.colorbar(scatter, ax=ax, label='Evaluation (y)')
-            
-        plt.tight_layout(rect=[0, 0.02, 1, 0.98])
-        plt.savefig(f'{IMG_PATH}\{0}.png')
+        h = [0]*len(train_x_np)
+        scatter = None
+        for i in range(6):
+            ax = axes[i]
+            if i == 0:
+                scatter = ax.scatter(train_x_np[:, i], h, c=train_y_np, cmap='viridis', alpha=0.7)
+            else:
+                ax.scatter(train_x_np[:, i], h, c=train_y_np, cmap='viridis', alpha=0.7)
+            ax.set_title(f'{dim_labels[i]}分布', fontsize=16, pad=20)
+            ax.set_aspect(0.2)
+            ax.tick_params(labelbottom=True, bottom=False)
+            ax.tick_params(labelleft=False, left=False)
+            ax.hlines(y=0, xmin=0, xmax=1, color='gray', linestyle='-', linewidth=0.8)
+            ax.vlines(x=np.arange(0, 1.1, 0.1), ymin=-0.04, ymax=0.04, color='gray', linestyle='-', linewidth=1.2)
+            ax.spines['top'].set_visible(False)
+            ax.spines['right'].set_visible(False)
+            ax.spines['left'].set_visible(False)
+            ax.spines['bottom'].set_visible(False)
+        cbar_ax = fig.add_axes([0.05, 0.1, 0.9, 0.025])
+        cbar = fig.colorbar(scatter, cax=cbar_ax, orientation='horizontal')
+        cbar.set_label('評価 (y)', fontsize=16)
+        plt.tight_layout(rect=[0, 0.15, 1, 1.02])
+        plt.savefig(os.path.join(IMG_PATH, '0.png'))
         plt.close(fig)
         return
-    
+
     if not run_execution:
         return
-
+    
     train_con = outcome_constraint(train_x).unsqueeze(-1)
     mll, model = singletask_model(train_x, train_y, train_con)
-
     fit_gpytorch_mll(mll)
-
     MC_SAMPLES = 256
     qmc_sampler = SobolQMCNormalSampler(sample_shape=torch.Size([MC_SAMPLES]))
-
     qLogNEI = qLogNoisyExpectedImprovement(
         model=model,
         X_baseline=train_x,
@@ -212,110 +222,69 @@ def single_model_loop(Y: float, run_execution: bool, Create: bool):
         objective=objective,
         constraints=[constraint_callable],
     )
-
     new_x, new_con, acq_value = optimize_acqf_and_get_observation(qLogNEI)
-
     new_train_x = torch.cat([train_x, new_x])
     new_train_con = torch.cat([train_con, new_con])
-
     torch.save(model, MODEL_PATH)
     torch.save(model.state_dict(), MODEL_OBJECT_PATH)
     torch.save(new_train_x, TENSOR_X_DATA_PATH)
     torch.save(new_train_con, TENSOR_CON_DATA_PATH)
-
     train_x_np = train_x.cpu().numpy()
     train_y_np = train_y.cpu().numpy().flatten()
     new_x_np = new_x.cpu().numpy()
-    
-    # 新しいデータポイントの予測値と標準偏差を計算
     model.eval()
     with torch.no_grad(), gpytorch.settings.fast_pred_var():
         posterior = model.posterior(new_x)
-        # Assuming the first output of the model is the objective for prediction
         mean = posterior.mean[..., 0].cpu().numpy().flatten()
         stddev = torch.sqrt(posterior.variance[..., 0]).cpu().numpy().flatten()
-    
-    # meanとstddevをJSONファイルに追記保存
-    # 既存のログファイルを読み込む
     if os.path.exists(PREDICTION_LOG_PATH):
         with open(PREDICTION_LOG_PATH, 'r', encoding='utf-8') as f:
             log_data = json.load(f)
     else:
         log_data = []
-    
-    # 今回のバッチで得られた各点の情報を追記
     start_point_number = len(train_y_np)
     for i in range(len(mean)):
         new_entry = {
             "point_number": start_point_number + i,
-            "mean": float(mean[i]),  # numpy.float32をpythonのfloatに変換
-            "stddev": float(stddev[i]) # numpy.float32をpythonのfloatに変換
+            "mean": float(mean[i]),
+            "stddev": float(stddev[i])
         }
         log_data.append(new_entry)
-
-    # ファイルに書き戻す
     with open(PREDICTION_LOG_PATH, 'w', encoding='utf-8') as f:
         json.dump(log_data, f, indent=4, ensure_ascii=False)
-
-    dims_to_vary_list = list(itertools.combinations(range(6), 2))
-
     for i in range(len(new_x_np)):
-        fig, axes = plt.subplots(5, 3, figsize=(18, 25))
-        highlight_point_number = len(train_y_np) + i
-        fig.suptitle(f'6次元データの散布図（全15パターン) #{highlight_point_number} :{acq_value:.2f}', fontsize=22)
-
-        for j, dims_to_vary in enumerate(dims_to_vary_list):
-            ax = axes[j // 3, j % 3]
-            dim1, dim2 = dims_to_vary
-            scatter = ax.scatter(
-                train_x_np[:, dim1], 
-                train_x_np[:, dim2], 
-                c=train_y_np, 
-                cmap='viridis',
-                alpha=0.7
-            )
-            # 新しいデータをハイライト表示
-            ax.scatter(
-                new_x_np[i, dim1], 
-                new_x_np[i, dim2], 
-                color='red', 
-                s=100, 
-                edgecolors='white',
-                linewidth=1.5,
-                label='New point'
-            )
-            text_x = new_x_np[i, dim1]
-            text_y = new_x_np[i, dim2]
-
-            # 予測範囲（range）を計算
-            lower_bound = (mean[i] - stddev[i])*100
-            upper_bound = (mean[i] + stddev[i])*100
-            # 標準偏差の値に基づいてカテゴリ名を決定
-            if 0.07 < stddev[i]:
-                category_name = '探索案'
-            elif stddev[i] <= 0.075:
-                category_name = '活用案'
-            # テキストを範囲表示に変更
-            ax.text(
-                text_x, 
-                text_y, 
-                f'{category_name}\nRange: {lower_bound:.0f} - {upper_bound:.0f}', 
-                fontsize=15, 
-                ha='left', 
-                va='bottom', 
-                color='black'
-                #bbox=dict(facecolor='white', alpha=0.7, edgecolor='none', boxstyle='round,pad=0.2')
-            )
-            ax.set_title(f'$X_{{{dim1+1}}}, X_{{{dim2+1}}}$ 平面', fontsize=16)
-            ax.set_xlabel(f'$X_{{{dim1+1}}}$', fontsize=12)
-            ax.set_ylabel(f'$X_{{{dim2+1}}}$', fontsize=12)
-            ax.set_aspect('equal')
-            fig.colorbar(scatter, ax=ax, label='Evaluation (y)')
-
-        plt.tight_layout(rect=[0, 0.02, 1, 0.98])
-        plt.savefig(f'{IMG_PATH}\{highlight_point_number}.png')
-        plt.close(fig)
-
+            fig, axes = plt.subplots(6, 1, figsize=(10, 12))
+            highlight_point_number = len(train_y_np) + i
+            fig.suptitle(f'6次元データの分布図 #{highlight_point_number} (AcqValue: {acq_value:.2f})', fontsize=22)
+            h = [0] * len(train_y_np)
+            lower_bound = (mean[i] - stddev[i]) * 100
+            upper_bound = (mean[i] + stddev[i]) * 100
+            category_name = '探索案' if 0.07 < stddev[i] else '活用案'
+            scatter = None
+            for dim in range(6):
+                ax = axes[dim]
+                current_scatter = ax.scatter(train_x_np[:, dim], h, c=train_y_np, cmap='viridis', alpha=0.7)
+                if dim == 0:
+                    scatter = current_scatter
+                ax.scatter(new_x_np[i, dim],0,color='red',s=150,edgecolors='white',linewidth=1.5,zorder=5)
+                ax.text(new_x_np[i, dim],-0.5,f'{category_name}\nRange: {lower_bound:.0f} - {upper_bound:.0f}',
+                    fontsize=15,ha='center',va='bottom',color='black')
+                ax.set_title(f'{dim_labels[dim]} 分布', fontsize=16, pad=20)
+                ax.set_aspect(0.2)
+                ax.tick_params(labelbottom=True, bottom=False)
+                ax.tick_params(labelleft=False, left=False)
+                ax.hlines(y=0, xmin=0, xmax=1, color='gray', linestyle='-', linewidth=0.8)
+                ax.vlines(x=np.arange(0, 1.1, 0.1), ymin=-0.04, ymax=0.04, color='gray', linestyle='-', linewidth=1.2)
+                ax.spines['top'].set_visible(False)
+                ax.spines['right'].set_visible(False)
+                ax.spines['left'].set_visible(False)
+                ax.spines['bottom'].set_visible(False)
+            cbar_ax = fig.add_axes([0.05, 0.1, 0.9, 0.025])
+            cbar = fig.colorbar(scatter, cax=cbar_ax, orientation='horizontal')
+            cbar.set_label('評価 (y)', fontsize=16)
+            fig.tight_layout(rect=[0, 0.15, 1, 1.02])
+            plt.savefig(os.path.join(IMG_PATH, f'{highlight_point_number}.png'))
+            plt.close(fig)
 
 if __name__ == '__main__':
     app.run(debug=True)
