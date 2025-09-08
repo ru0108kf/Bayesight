@@ -103,8 +103,8 @@ def singletask_model(train_x, train_obj, train_con, state_dict=None):
 EPSILON = 1e-6
 def outcome_constraint(X):
     """constraint; The two elements of X are not zero."""
-    constraint1 = EPSILON - torch.abs(X[..., 0])
-    constraint2 = EPSILON - torch.abs(X[..., 1])
+    constraint1 = EPSILON - torch.abs(X[..., 2])
+    constraint2 = EPSILON - torch.abs(X[..., 3])
     return torch.max(constraint1, constraint2)
 
 def obj_callable(Z: torch.Tensor, X: Optional[torch.Tensor] = None):
@@ -252,6 +252,10 @@ def single_model_loop(Y: float, run_execution: bool, Create: bool):
         log_data.append(new_entry)
     with open(PREDICTION_LOG_PATH, 'w', encoding='utf-8') as f:
         json.dump(log_data, f, indent=4, ensure_ascii=False)
+    
+    with open(JSON_Y_DATA_PATH, "w", encoding="utf-8") as f:
+        json.dump(Y, f, ensure_ascii=False, indent=4)
+        
     for i in range(len(new_x_np)):
             fig, axes = plt.subplots(6, 1, figsize=(10, 12))
             highlight_point_number = len(train_y_np) + i
