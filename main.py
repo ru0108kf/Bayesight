@@ -11,7 +11,6 @@ import matplotlib.pyplot as plt
 import itertools
 import japanize_matplotlib
 
-
 # =================数値設定=================
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 dtype = torch.double
@@ -30,8 +29,6 @@ MODEL_PATH = os.path.join(SAVE_FOLDER_PATH, 'model.pth')
 MODEL_OBJECT_PATH = os.path.join(SAVE_FOLDER_PATH, 'model_object.pth')
 IMG_PATH = os.path.join(SAVE_FOLDER_PATH, 'img')
 PREDICTION_LOG_PATH = os.path.join(SAVE_FOLDER_PATH, 'prediction_log.json')
-
-
 
 # =================数値設定ここまで=================
 # =================botorch実装部分=================
