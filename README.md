@@ -5,7 +5,7 @@
 To get started, simply install the required dependencies using pip.
 
 ```bash
-python -m venv Bayesight
+python3.9 -m venv Bayesight
 
 # Windows
 Bayesight\Scripts\activate
