@@ -15,7 +15,35 @@ source Bayesight/bin/activate
 pip install requirements.txt
 ```
 
+anaconda
+
+```bash
+conda create -n Bayesight python=3.9
+
+conda activate Bayesight
+
+conda install requirements.txt
+```
+
 ## How to Use
+Please replace the specified part in `main.py` with your own path.
+Open the Grasshopper file (`tutorial.gh`), then open the terminal (Anaconda Prompt) and activate your virtual environment.
+Type the following command:
+
+```
+python main.py
+```
+
+If you see
+
+```
+ * Running on http://127.0.0.1:5000
+[INFO] Press CTRL+C to quit
+```
+
+it means everything is working correctly.
+
+Feel free to modify the pavilion part in the tutorial to your liking and experiment with it!
 
 ## Contributions
 
